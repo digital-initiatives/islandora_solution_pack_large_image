@@ -41,6 +41,7 @@
           <?php foreach ($parent_collections as $collection): ?>
         <li><?php print l($collection->label, "islandora/object/{$collection->id}"); ?></li>
           <?php endforeach; ?>
+          <h4><?php print l(t('Download the MODS record'), "islandora/object/{$islandora_object}/datastream/MODS/view"); ?></h4>
         </ul>
       </div>
     <?php endif; ?>
