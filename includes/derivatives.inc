@@ -63,10 +63,20 @@ function islandora_large_image_create_jp2_derivative(AbstractObject $object, $fo
         $identify = islandora_large_image_get_identify();
         // Define all these variables in one call for a large performance gain.
         $file_path = drupal_realpath($uploaded_file);
-        list($height, $width, $y_resolution, $x_resolution) = explode(
-          ',',
-          exec(escapeshellcmd("$identify -format \"%h,%W,%y,%x\" $file_path"))
-        );
+
+        if (!isset(islandora_large_image_get_identify_file($file_path)['height']) || !isset(islandora_large_image_get_identify_file($file_path)['width']) || !isset(islandora_large_image_get_identify_file($file_path)['y_resolution']) || !isset(islandora_large_image_get_identify_file($file_path)['x_resolution'])) {
+          list($height, $width, $y_resolution, $x_resolution) = explode(
+            ',',
+            exec(escapeshellcmd("$identify -format \"%h,%W,%y,%x\" $file_path"))
+            );
+        }
+        else {
+          $height = islandora_large_image_get_identify_file($file_path)['height'];
+          $width = islandora_large_image_get_identify_file($file_path)['width'];
+          $y_resolution = islandora_large_image_get_identify_file($file_path)['y_resolution'];
+          $x_resolution = islandora_large_image_get_identify_file($file_path)['x_resolution'];
+        }
+
         if (((int) $x_resolution < 300 || (int) $y_resolution < 300) ||
           ($height < 1024 || $width < 1024)) {
           $lossless = TRUE;
@@ -133,6 +143,10 @@ function islandora_large_image_create_jp2_derivative(AbstractObject $object, $fo
     }
     file_unmanaged_delete($uploaded_file);
     file_unmanaged_delete($derivative_file);
+    if (file_exists("temporary://{$base_name}.txt")) {
+      // Delete the image data file created when file is uploaded.
+      file_unmanaged_delete("temporary://{$base_name}.txt");
+    }
     return $to_return;
   }
 }
@@ -283,10 +297,17 @@ function islandora_large_image_create_tn_derivative(AbstractObject $object, $for
  *   Returns the newly generated file uri or FALSE if the conversion failed
  */
 function islandora_large_image_kdu_compress($src, $dest, $args = NULL) {
-  // Kakadu does a poor job of converting low bit depths.
-  module_load_include('inc', 'islandora_large_image', 'includes/utilities');
-  if (islandora_large_image_get_bit_depth($src) < 8) {
-    return FALSE;
+  if (!isset(islandora_large_image_get_identify_file($src)['bitdepth'])) {
+    // Kakadu does a poor job of converting low bit depths.
+    module_load_include('inc', 'islandora_large_image', 'includes/utilities');
+    if (islandora_large_image_get_bit_depth($src) < 8) {
+      return FALSE;
+    }
+  }
+  else {
+    if (islandora_large_image_get_identify_file($src)['bitdepth'] < 8) {
+      return FALSE;
+    }
   }
 
   // Kinda weird logic, to avoid changing the source.
@@ -479,14 +500,19 @@ function islandora_large_image_get_args($lossless) {
  *   (if it could be reencoded by the "free" version of Kakadu.
  */
 function islandora_large_image_is_uncompressed_tiff($file) {
-  $identify = islandora_large_image_get_identify();
+  if (!isset(islandora_large_image_get_identify_file($file)['compressed'])) {
+    $identify = islandora_large_image_get_identify();
 
-  $escaped_file = escapeshellarg(drupal_realpath($file));
+    $escaped_file = escapeshellarg(drupal_realpath($file));
 
-  $compression = exec(escapeshellcmd("$identify -format \"%C\" ") . $escaped_file);
+    $compression = exec(escapeshellcmd("$identify -format \"%C\" ") . $escaped_file);
 
-  $compressed = (strtolower($compression) != 'none');
+    $compressed = (strtolower($compression) != 'none');
 
+  }
+  else {
+    $compressed = (islandora_large_image_get_identify_file($file)['compressed'] != 'none');
+  }
   return !$compressed && islandora_large_image_is_tiff($file);
 }
 
@@ -500,19 +526,24 @@ function islandora_large_image_is_uncompressed_tiff($file) {
  *   A boolean indicating if the file contains a TIFF.
  */
 function islandora_large_image_is_tiff($file) {
-  $identify = islandora_large_image_get_identify();
+  if (!isset(islandora_large_image_get_identify_file($file)['codec'])) {
 
-  $escaped_file = escapeshellarg(drupal_realpath($file));
+    $identify = islandora_large_image_get_identify();
 
-  $codec = exec(escapeshellcmd("$identify -format \"%m\" ") . $escaped_file);
+    $escaped_file = escapeshellarg(drupal_realpath($file));
 
-  $is_tiff = strrpos(strtolower($codec), 'tiff');
+    $codec = exec(escapeshellcmd("$identify -format \"%m\" ") . $escaped_file);
+
+    $is_tiff = strrpos(strtolower($codec), 'tiff');
+  }
+  else {
+    $is_tiff = strrpos(strtolower(islandora_large_image_get_identify_file($file)['codec']), 'tiff');
+  }
 
   /* Avoid false negatives after strrpos */
   if ($is_tiff !== FALSE) {
     $is_tiff = TRUE;
   }
-
   return $is_tiff;
 }
 
@@ -526,14 +557,19 @@ function islandora_large_image_is_tiff($file) {
  *   A boolean indicating if the file contains a JP2.
  */
 function islandora_large_image_is_jp2($file) {
-  $identify = islandora_large_image_get_identify();
+  if (!isset(islandora_large_image_get_identify_file($file)['codec'])) {
+    $identify = islandora_large_image_get_identify();
 
-  $escaped_file = escapeshellarg(drupal_realpath($file));
+    $escaped_file = escapeshellarg(drupal_realpath($file));
 
-  $codec = exec(escapeshellcmd("$identify -format \"%m\" ") . $escaped_file);
+    $codec = exec(escapeshellcmd("$identify -format \"%m\" ") . $escaped_file);
 
-  $is_jp2 = (strtolower($codec) == 'jp2');
+    $is_jp2 = (strtolower($codec) == 'jp2');
 
+  }
+  else {
+    $is_jp2 = strrpos(strtolower(islandora_large_image_get_identify_file($file)['codec']), 'jp2');
+  }
   return $is_jp2;
 }
 
@@ -548,12 +584,20 @@ function islandora_large_image_is_jp2($file) {
  *   identify command exists/fails with 1.
  */
 function islandora_large_image_get_colorspace($file) {
-  $identify = islandora_large_image_get_identify();
+  if (!isset(islandora_large_image_get_identify_file($file)['colorspace'])) {
 
-  $escaped_file = escapeshellarg(drupal_realpath($file));
+    $identify = islandora_large_image_get_identify();
 
-  $colorspace = exec(escapeshellcmd("$identify -quiet -format %[colorspace] ") . $escaped_file, $output, $procret);
+    $escaped_file = escapeshellarg(drupal_realpath($file));
 
+    $colorspace = exec(escapeshellcmd("$identify -quiet -format %[colorspace] ") . $escaped_file, $output, $procret);
+
+  }
+  else {
+    $colorspace = islandora_large_image_get_identify_file($file)['colorspace'];
+    // Added back because this bypasses the need for it.
+    $procret = 0;
+  }
   return !$procret ? $colorspace : FALSE;
 }
 
@@ -574,6 +618,33 @@ function islandora_large_image_get_identify() {
   $identify = str_replace('convert', 'identify', $convert);
 
   return $identify;
+}
+
+/**
+ * Creates and array from a temporary image data file.
+ *
+ * Checks to see if the file exist (won't exist during regenerate derivatives)
+ *
+ * @return array|bool
+ *   Returns array if the file exist.
+ */
+function islandora_large_image_get_identify_file($check_file) {
+  if (file_exists(substr($check_file, 0, -8) . ".txt")) {
+    if (file_get_contents(substr($check_file, 0, -8) . ".txt")) {
+      // Replaces _OBJ.EXT with .txt in the filename string.
+      $id_file = file_get_contents(substr($check_file, 0, -8) . ".txt");
+      $lines = preg_split('/\n|\r\n?/', $id_file);
+      foreach ($lines as $line) {
+        list($key, $value) = explode('=>', $line, 2) + array(NULL, NULL);
+        if ($value !== NULL) {
+          $array[$key] = strtolower($value);
+        }
+      }
+    }
+  }
+  else {
+  }
+  return isset($array) ? $array : FALSE;
 }
 
 /**

@@ -49,6 +49,14 @@ function islandora_large_image_image_upload_form_submit(array $form, array &$for
   $object = islandora_ingest_form_get_object($form_state);
   $file = file_load($form_state['values']['file']);
   $path = drupal_realpath($file->uri);
+
+  // Height width y_resolution x_resolution compression codec colorspace depth.
+  $file_image_properties = exec(escapeshellcmd("identify -format \"height=>%h\r\nwidth=>%W\r\ny_resolution=>%y\r\nx_resolution=>%x\r\ncompression=>%C\r\ncodec=>%m\r\ncolorspace=>%r\r\nbitdepth=>%z\" $path"));
+
+  // Create a temp file with the id as the filename using a .txt extension.
+  $base_name = str_replace(':', '-', $object->id);
+  file_put_contents("temporary://{$base_name}.txt", $file_image_properties);
+
   if ($form_state['values']['file']) {
     if (empty($object['OBJ'])) {
       $ds = $object->constructDatastream('OBJ', 'M');
