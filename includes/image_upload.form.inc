@@ -47,6 +47,8 @@ function islandora_large_image_image_upload_form(array $form, array &$form_state
  */
 function islandora_large_image_image_upload_form_submit(array $form, array &$form_state) {
   $object = islandora_ingest_form_get_object($form_state);
+  $file = file_load($form_state['values']['file']);
+  $path = drupal_realpath($file->uri);
   if ($form_state['values']['file']) {
     if (empty($object['OBJ'])) {
       $ds = $object->constructDatastream('OBJ', 'M');
@@ -55,8 +57,6 @@ function islandora_large_image_image_upload_form_submit(array $form, array &$for
     else {
       $ds = $object['OBJ'];
     }
-    $file = file_load($form_state['values']['file']);
-    $path = drupal_realpath($file->uri);
     $ds->setContentFromFile($path, FALSE);
     $ds->label = $file->filename;
     $ds->mimetype = $file->filemime;
